@@ -1,0 +1,7 @@
+@import 'bootstrap/dist/css/bootstrap.min.css';
+@import 'bootstrap-icons/font/bootstrap-icons.min.css';
+@import 'select2/dist/css/select2.min.css';
+@import 'sweetalert2/dist/sweetalert2.min.css';
+@import './fida-admin.css';
+@import './crm.css';
+@import './hub-workspace.css';

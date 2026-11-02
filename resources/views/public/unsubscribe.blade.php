@@ -1,0 +1,3 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Unsubscribe</title></head><body style="font-family:system-ui;max-width:460px;margin:10vh auto;padding:24px"><h1>Email preferences</h1><p>Unsubscribe this email address from marketing campaigns.</p><form method="POST" action="{{ \Illuminate\Support\Facades\URL::temporarySignedRoute('marketing.unsubscribe',now()->addMinutes(20),['tenant'=>$tenant,'contact'=>$contact]) }}" data-smart-form>
+
+@csrf<button style="background:#ad6712;color:#fff;border:0;padding:14px 24px;border-radius:9px">Unsubscribe</button></form></body></html>

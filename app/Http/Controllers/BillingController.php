@@ -1,0 +1,16 @@
+<?php
+namespace App\Http\Controllers;
+use App\Services\WorkspaceContext as W;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+class BillingController extends Controller {
+ public function plans(){W::authorize('billing.view');return view('crm.billing',['plans'=>DB::table('plans')->orderBy('monthly_cents')->get(),'current'=>DB::table('subscriptions')->where('tenant_id',W::id())->first()]);}
+ public function checkout(Request $r,int $plan){W::authorize('billing.manage');$p=DB::table('plans')->where('id',$plan)->first();abort_unless($p,404);abort_unless(config('services.stripe.secret') && $p->stripe_price_id,503,'Billing provider is not configured.');$tenant=W::tenant();$subscription=DB::table('subscriptions')->where('tenant_id',$tenant->id)->first();abort_unless(!$subscription || !$subscription->stripe_subscription_id,422,'Use the billing portal for an existing subscription.');$response=Http::withToken(config('services.stripe.secret'))->asForm()->post('https://api.stripe.com/v1/checkout/sessions',['mode'=>'subscription','line_items'=>[['price'=>$p->stripe_price_id,'quantity'=>1]],'client_reference_id'=>(string)$tenant->id,'metadata[tenant_id]'=>(string)$tenant->id,'metadata[plan_id]'=>(string)$p->id,'success_url'=>route('billing.plans').'?checkout=success','cancel_url'=>route('billing.plans').'?checkout=cancel']);abort_unless($response->successful()&&filter_var($response->json('url'),FILTER_VALIDATE_URL),502,'Checkout temporarily unavailable.');return redirect()->away($response->json('url'));
+ }
+ public function webhook(Request $r){$secret=config('services.stripe.webhook_secret');abort_unless($secret,503);$signature=$r->header('Stripe-Signature','');preg_match('/(?:^|,)t=(\\d+)/',$signature,$m);preg_match('/(?:^|,)v1=([a-f0-9]+)/',$signature,$s);abort_unless($m && $s && abs(time()-(int)$m[1])<300,400);$expected=hash_hmac('sha256',$m[1].'.'.$r->getContent(),$secret);abort_unless(hash_equals($expected,$s[1]),400);$event=$r->json()->all();$obj=$event['data']['object']??[];
+  if(($event['type']??'')==='checkout.session.completed' && ($obj['payment_status']??'')!=='unpaid'){$tenant=(int)($obj['metadata']['tenant_id']??$obj['client_reference_id']??0);$plan=(int)($obj['metadata']['plan_id']??0);if($tenant && $plan && DB::table('plans')->where('id',$plan)->exists())DB::transaction(function()use($tenant,$plan,$obj){DB::table('subscriptions')->updateOrInsert(['tenant_id'=>$tenant],['plan_id'=>$plan,'status'=>'active','stripe_customer_id'=>$obj['customer']??null,'stripe_subscription_id'=>$obj['subscription']??null,'updated_at'=>now()]);DB::table('tenants')->where('id',$tenant)->update(['status'=>'active']);});}
+  if(in_array($event['type']??'',['customer.subscription.deleted','customer.subscription.updated'],true)){$sub=DB::table('subscriptions')->where('stripe_subscription_id',$obj['id']??'')->first();if($sub){$status=$obj['status']??'canceled';DB::table('subscriptions')->where('id',$sub->id)->update(['status'=>$status,'period_ends_at'=>isset($obj['current_period_end'])?date('Y-m-d H:i:s',$obj['current_period_end']):null]);DB::table('tenants')->where('id',$sub->tenant_id)->update(['status'=>in_array($status,['active','trialing'],true)?'active':'suspended']);}}
+  return response()->json(['received'=>true]);
+ }
+}
